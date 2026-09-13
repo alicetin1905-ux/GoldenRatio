@@ -15,7 +15,21 @@
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
   body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
-       display:flex;flex-direction:column;overflow:hidden}
+       display:flex;flex-direction:column;overflow:hidden;position:relative}
+
+  /* ambient aurora wash — same soft top/bottom glow + scanline texture as
+     BTCLiveBoard, in this page's own gold accent. Fixed + negative z-index
+     so it sits behind everything without needing every element re-tagged. */
+  .wash{
+    position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(ellipse 130% 80% at 50% -10%, rgba(232,185,60,0.10), transparent 60%),
+      radial-gradient(ellipse 120% 70% at 50% 110%, rgba(232,185,60,0.10), transparent 62%);
+  }
+  .scanlines{
+    position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0.5;
+    background:repeating-linear-gradient(to bottom, rgba(255,255,255,0.014) 0 1px, transparent 1px 3px);
+  }
 
   header{display:flex;align-items:center;gap:10px;padding:8px 12px;
          background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap}
@@ -77,6 +91,8 @@
 </style>
 </head>
 <body>
+<div class="wash"></div>
+<div class="scanlines"></div>
 <header>
   <div class="led" id="connLed"></div>
   <div class="logo">GOLDEN RATIO <span>· auto fibonacci</span></div>
