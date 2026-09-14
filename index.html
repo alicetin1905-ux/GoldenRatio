@@ -95,6 +95,10 @@
        font-size:11px;padding:3px 5px;border-radius:3px}
   #cfg input[type=number]{width:52px}
   #cfg input:focus,#cfg select:focus{outline:1px solid var(--gold-dim)}
+  #watchBtn{background:var(--panel2);border:1px solid var(--border);color:var(--dim);
+       font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:3px;cursor:pointer}
+  #watchBtn.on{color:var(--gold);border-color:var(--gold-dim)}
+  #watchHint{color:var(--faint);font-size:10.5px;flex-basis:100%}
   #lastEval{margin-left:auto;color:var(--faint);font-size:10px}
   @media (max-width:480px){ .cell{padding:6px 9px;min-width:64px} .logo{font-size:12px;letter-spacing:1.5px} .logo span{display:none} }
 </style>
@@ -116,6 +120,7 @@
 <div id="status">
   <div class="cell"><div class="k">Impulse</div><div class="v dim" id="stDir">scanning…</div></div>
   <div class="cell"><div class="k">Move</div><div class="v" id="stMove">—</div></div>
+  <div class="cell"><div class="k">Entry</div><div class="v dim" id="stEntry">—</div></div>
   <div class="cell" id="retrCell"><div class="k">Retrace</div><div class="v dim" id="stRetr">—</div></div>
 </div>
 
@@ -126,6 +131,8 @@
   </select></label>
   <label>threshold %<input type="number" id="cfgTh" value="2" min="0.5" max="20" step="0.1"></label>
   <label id="winLabel" style="display:none">window (candles)<input type="number" id="cfgWin" value="12" min="2" max="96" step="1"></label>
+  <button id="watchBtn">alerts off</button>
+  <span id="watchHint"></span>
   <span id="lastEval"></span>
 </div>
 
@@ -252,6 +259,36 @@ let prevLive = null;
 let pollTimer = null;
 let reqGen = 0;   // bumped on every tab switch; stale responses are discarded
 
+/* Entry price: the live price the moment THIS impulse was first seen (new
+   direction, or no impulse -> one), not the impulse's own p0/p1 extreme —
+   those legitimately keep extending while a move is still developing (see
+   detectImpulse), which is correct fib behaviour, not something to freeze.
+   Entry is a separate "when did I first notice this" reference alongside
+   it. Keyed per symbol/timeframe like ATLAS's flip tracking, so switching
+   tabs and back doesn't lose it. */
+const FLIP_KEY = 'goldenratio-flip-v1';
+let flipEntries = {};
+function flipLoad() {
+  try {
+    const j = JSON.parse(localStorage.getItem(FLIP_KEY) || '{}');
+    if (j && typeof j === 'object') flipEntries = j;
+  } catch (e) {}
+}
+function flipSave() {
+  try { localStorage.setItem(FLIP_KEY, JSON.stringify(flipEntries)); } catch (e) {}
+}
+function trackFlipEntry(sym, tf, dir, price) {
+  const key = sym + ':' + tf;
+  const prev = flipEntries[key];
+  if (dir && (!prev || prev.dir !== dir)) {
+    flipEntries[key] = { dir, price };
+    flipSave();
+  } else if (!dir && prev) {
+    delete flipEntries[key];
+    flipSave();
+  }
+}
+
 // ---------- chart ----------
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
   layout:{ background:{ color:'#070a09' }, textColor:'#7c8f87',
@@ -370,6 +407,7 @@ function renderStatus(imp, levels, livePrice) {
   if (!imp) {
     $('stDir').textContent = 'no impulse'; $('stDir').className = 'v dim';
     $('stMove').textContent = '—'; $('stMove').className = 'v';
+    $('stEntry').textContent = '—'; $('stEntry').className = 'v dim';
     RATIOS.forEach(r => $(cellId(r)).textContent = '—');
     $('stRetr').textContent = '—'; $('stRetr').className = 'v dim';
     return;
@@ -378,6 +416,9 @@ function renderStatus(imp, levels, livePrice) {
   $('stDir').className = 'v ' + (imp.dir === 'up' ? 'up' : 'dn');
   $('stMove').textContent = (imp.dir === 'up' ? '+' : '−') + imp.movePct.toFixed(2) + '%';
   $('stMove').className = 'v ' + (imp.dir === 'up' ? 'up' : 'dn');
+  const entry = flipEntries[activeSym + ':' + activeTF];
+  $('stEntry').textContent = entry ? fmt(entry.price) : '—';
+  $('stEntry').className = 'v ' + (imp.dir === 'up' ? 'up' : 'dn');
   levels.forEach(lv => { $(cellId(lv.ratio)).textContent = fmt(lv.price); });
   if (livePrice != null) {
     const depth = (livePrice - imp.p0) / (imp.p1 - imp.p0); // 0 at extreme → 1 at origin
@@ -466,6 +507,7 @@ function evaluate(liveCandle) {
   const { th, win } = cfg();
   const imp = detect(candles, th, win, 300);
   const live = liveCandle ? liveCandle.close : (candles.length ? candles[candles.length-1].close : null);
+  trackFlipEntry(activeSym, activeTF, imp ? imp.dir : null, live);
   if (imp) {
     const levels = fibLevels(imp);
     drawFibs(imp, levels);
@@ -620,6 +662,119 @@ function switchTF(key) {
   pollTimer = setInterval(() => poll(false), POLL_MS);
 }
 
+// Combined symbol+timeframe switch for notification deep-links — avoids the
+// double poll()/flicker of calling switchSym() then switchTF() separately.
+function gotoImpulse(symKey, tfKey) {
+  if (symKey === activeSym && tfKey === activeTF) { resetView(); return; }
+  activeSym = symKey; activeTF = tfKey;
+  reqGen++;
+  clearInterval(pollTimer);
+  document.querySelectorAll('.symBtn').forEach(b => b.classList.toggle('active', b.id === 'sym_' + symKey));
+  document.querySelectorAll('.tfBtn').forEach(b => b.classList.toggle('active', b.id === 'tf_' + tfKey));
+  const r = symRec();
+  document.getElementById('symLabel').textContent = r.sym + '.P · Bybit linear';
+  candleSeries.applyOptions({ priceFormat:{ type:'price', precision:r.prec, minMove:r.move } });
+  clearFibs();
+  candles = []; lastClosedTime = 0; prevLive = null;
+  candleSeries.setData([]);
+  $('livePrice').textContent = '—'; $('livePrice').className = '';
+  poll(true);
+  scanStrip();
+  scanSymStrip();
+  pollTimer = setInterval(() => poll(false), POLL_MS);
+}
+
+/* ---------------- background alerts: new impulse detected ----------------
+   Mirrors ATLAS's watch/scanAll system: scans every symbol x timeframe on
+   its own schedule, independent of whatever's on screen, using the SAME
+   detect() + threshold/window config the active view uses, and notifies
+   on any transition into a new impulse (none -> one, or a direction flip). */
+const WATCH_KEY = 'goldenratio-watch-v1';
+const watch = { on: false, sys: false, last: {} };
+const watchKey = (s, t) => s + ':' + t;
+
+function watchLoad() {
+  try {
+    const j = JSON.parse(localStorage.getItem(WATCH_KEY) || '{}');
+    if (typeof j.on === 'boolean') watch.on = j.on;
+    if (j.last && typeof j.last === 'object') watch.last = j.last;
+  } catch (e) {}
+  watch.sys = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+}
+function watchSave() {
+  try { localStorage.setItem(WATCH_KEY, JSON.stringify({ on: watch.on, last: watch.last })); } catch (e) {}
+}
+function fireWatch(symKey, tfKey, imp) {
+  if (!watch.sys) return;
+  const title = `GOLDEN RATIO — ${symKey} ${tfKey}`;
+  const body = (imp.dir === 'up' ? '▲ PUMP' : '▼ DUMP') + ' · ' + imp.movePct.toFixed(2) + '%';
+  try {
+    const n = new Notification(title, { body, tag: 'goldenratio-' + watchKey(symKey, tfKey), renotify: false });
+    n.onclick = () => {
+      try { window.focus(); } catch (e) {}
+      if (window.self !== window.top) {
+        try { window.parent.postMessage({ type: 'goldenratio-goto', symbolId: symKey, tfId: tfKey }, location.origin); }
+        catch (e) {}
+      }
+      gotoImpulse(symKey, tfKey);
+      n.close();
+    };
+  } catch (e) {}
+}
+let watchBusy = false;
+async function scanAll() {
+  if (!watch.on || watchBusy) return;
+  watchBusy = true;
+  try { await scanAllOnce(); } finally { watchBusy = false; }
+}
+async function scanAllOnce() {
+  const { th, win } = cfg();
+  for (const s of SYMBOLS) {
+    for (const tf of TFS) {
+      try {
+        const all = await fetchKlines(tf.iv, 300, s.sym);
+        const closed = all.slice(0, -1);
+        const imp = detect(closed, th, win, 280);
+        const key = watchKey(s.key, tf.key);
+        const prevDir = watch.last[key] || null;
+        const curDir = imp ? imp.dir : null;
+        if (curDir && curDir !== prevDir) fireWatch(s.key, tf.key, imp);
+        watch.last[key] = curDir;
+      } catch (e) { /* keep whatever was there; try again next scan */ }
+    }
+  }
+  watchSave();
+}
+function paintWatchUi() {
+  const b = $('watchBtn');
+  b.classList.toggle('on', watch.on);
+  b.textContent = watch.on ? 'alerts on' : 'alerts off';
+  const hint = $('watchHint');
+  if (!watch.on) { hint.textContent = ''; return; }
+  const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const standalone = window.navigator.standalone === true ||
+    (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if (!watch.sys) {
+    hint.textContent = iOS && !standalone
+      ? 'No system notifications in a plain Safari tab — add this to the Home Screen and open it from there to get real alerts.'
+      : 'System notifications are blocked or not permitted in this browser.';
+  } else {
+    hint.textContent = `Watching ${SYMBOLS.length} coins × ${TFS.length} timeframes for a new impulse.`;
+  }
+}
+async function toggleWatch() {
+  if (watch.on) { watch.on = false; watchSave(); paintWatchUi(); return; }
+  watch.on = true;
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    try { await Notification.requestPermission(); } catch (e) {}
+  }
+  watch.sys = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  watchSave();
+  paintWatchUi();
+  scanAll();
+}
+$('watchBtn').addEventListener('click', toggleWatch);
+
 function refreshAll() { evaluate(null); scanStrip(); scanSymStrip(); }
 $('cfgMode').addEventListener('change', () => {
   $('winLabel').style.display = cfgMode() === 'window' ? '' : 'none';
@@ -629,6 +784,9 @@ $('cfgTh').addEventListener('change', refreshAll);
 $('cfgWin').addEventListener('change', refreshAll);
 
 // ---------- boot ----------
+flipLoad();
+watchLoad();
+paintWatchUi();
 loadTickSizes();
 buildLevelCells();
 buildSymStrip();
@@ -640,6 +798,8 @@ pollTimer = setInterval(() => poll(false), POLL_MS);
 setInterval(() => { scanStrip(); scanSymStrip(); }, 60000);
 refreshTrendGlow();
 setInterval(refreshTrendGlow, 60000);
+if (watch.on) setTimeout(scanAll, 4000);   /* stagger past the initial page load */
+setInterval(scanAll, 60000);
 </script>
 </body>
 </html>
