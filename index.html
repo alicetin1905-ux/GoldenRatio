@@ -10,6 +10,7 @@
     --text:#c9d6e2; --dim:#5c6f80; --faint:#324150;
     --gold:#e8b93c; --gold-dim:#8a6d1e;
     --up:#26a69a; --down:#ef5350;
+    --trend-glow: rgba(232,185,60,0.04);  /* BTC's own live trend, not whichever coin is on screen */
     --mono:'SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
@@ -17,14 +18,16 @@
   body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;
        display:flex;flex-direction:column;overflow:hidden;position:relative}
 
-  /* ambient aurora wash — same soft top/bottom glow + scanline texture as
-     BTCLiveBoard, in this page's own gold accent. Fixed + negative z-index
-     so it sits behind everything without needing every element re-tagged. */
+  /* ambient aurora wash — carries BTC's own live trend (green=long/red=
+     short, brighter the stronger the trend), independent of whichever coin
+     is on screen (see refreshTrendGlow()). Fixed + negative z-index so it
+     sits behind everything without needing every element re-tagged. */
   .wash{
     position:fixed;inset:0;z-index:-1;pointer-events:none;
     background:
-      radial-gradient(ellipse 130% 80% at 50% -10%, rgba(232,185,60,0.10), transparent 60%),
-      radial-gradient(ellipse 120% 70% at 50% 110%, rgba(232,185,60,0.10), transparent 62%);
+      radial-gradient(ellipse 130% 80% at 50% -10%, var(--trend-glow), transparent 60%),
+      radial-gradient(ellipse 120% 70% at 50% 110%, var(--trend-glow), transparent 62%);
+    transition:background 1.4s ease;
   }
   .scanlines{
     position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0.5;
@@ -401,6 +404,50 @@ async function fetchKlines(iv, limit, sym) {
   }));
 }
 
+/* ---------------- background wash: BTC's own live trend ----------------
+   Fetches BTC 1H candles on its own schedule, independent of whichever
+   coin is the active view, so the aurora always reflects BTC — direction
+   from price vs EMA200, intensity from how many ATRs price has stretched
+   away from it (saturates at 4 ATRs). */
+function ema(values, period) {
+  const out = new Array(values.length).fill(NaN);
+  if (values.length < period) return out;
+  const k = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  out[period - 1] = sum / period;
+  for (let i = period; i < values.length; i++) out[i] = values[i] * k + out[i - 1] * (1 - k);
+  return out;
+}
+function atr14(candles) {
+  const out = new Array(candles.length).fill(NaN);
+  const tr = candles.map((c, i) => i === 0 ? c.high - c.low
+    : Math.max(c.high - c.low, Math.abs(c.high - candles[i - 1].close), Math.abs(c.low - candles[i - 1].close)));
+  if (tr.length < 14) return out;
+  let sum = 0;
+  for (let i = 0; i < 14; i++) sum += tr[i];
+  out[13] = sum / 14;
+  for (let i = 14; i < tr.length; i++) out[i] = (out[i - 1] * 13 + tr[i]) / 14;
+  return out;
+}
+async function refreshTrendGlow() {
+  try {
+    const k = await fetchKlines('60', 250, 'BTCUSDT');
+    if (k.length < 210) return;
+    const closes = k.map(c => c.close);
+    const i = k.length - 1;
+    const emaNow = ema(closes, 200)[i];
+    const atrNow = atr14(k)[i];
+    if (!isFinite(emaNow) || !isFinite(atrNow) || atrNow <= 0) return;
+    const price = closes[i];
+    const dir = price >= emaNow ? 1 : -1;
+    const strength = Math.max(0, Math.min(1, Math.abs(price - emaNow) / (atrNow * 4)));
+    const rgb = dir === 1 ? '53,255,176' : '255,77,106';
+    const alpha = (0.03 + strength * 0.15).toFixed(3);
+    document.documentElement.style.setProperty('--trend-glow', `rgba(${rgb},${alpha})`);
+  } catch (e) { /* keep whatever glow was already showing */ }
+}
+
 function cfgMode() { return $('cfgMode').value; }
 function cfg() {
   const th = Math.max(0.1, parseFloat($('cfgTh').value) || 2);
@@ -585,6 +632,8 @@ scanStrip();
 scanSymStrip();
 pollTimer = setInterval(() => poll(false), POLL_MS);
 setInterval(() => { scanStrip(); scanSymStrip(); }, 60000);
+refreshTrendGlow();
+setInterval(refreshTrendGlow, 60000);
 </script>
 </body>
 </html>
