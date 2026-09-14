@@ -4,14 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>GOLDEN RATIO · BTCUSDT.P · Auto Fibonacci</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
+  /* Palette + typography matched to BTCLiveBoard ("the first page") so all 4
+     apps in this family read as one system. --gold/--gold-dim are this
+     page's own identity colour (its name/branding) and stay as they were. */
   :root{
-    --bg:#0a0e12; --panel:#10161d; --panel2:#141c25; --border:#1e2a36;
-    --text:#c9d6e2; --dim:#5c6f80; --faint:#324150;
+    --bg:#070a09; --panel:#0e1412; --panel2:#121a17; --border:#1b2320;
+    --text:#eef4f0; --dim:#7c8f87; --faint:#4a5852;
     --gold:#e8b93c; --gold-dim:#8a6d1e;
-    --up:#26a69a; --down:#ef5350;
-    --trend-glow: rgba(232,185,60,0.04);  /* BTC's own live trend, not whichever coin is on screen */
-    --mono:'SF Mono',ui-monospace,'Cascadia Code',Menlo,Consolas,monospace;
+    --up:#35ffb0; --down:#ff4d6a;
+    --trend-glow: rgba(255,200,87,0.04);  /* BTC's own live trend, not whichever coin is on screen */
+    --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
   }
   *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%}
@@ -166,10 +172,10 @@ const RATIOS = [-0.618, -0.272, 0, 0.5, 0.618, 1, 1.272, 1.618];
 const LEVEL_STYLE = {
   '-0.618': { color:'#2e7d6b', width:1, ext:true },
   '-0.272': { color:'#2e7d6b', width:1, ext:true },
-  '0':      { color:'#5c6f80', width:1 },
+  '0':      { color:'#7c8f87', width:1 },
   '0.5':    { color:'#4a7fb5', width:1 },
   '0.618':  { color:'#e8b93c', width:2 },
-  '1':      { color:'#5c6f80', width:1 },
+  '1':      { color:'#7c8f87', width:1 },
   '1.272':  { color:'#8f4a52', width:1, ext:true },
   '1.618':  { color:'#8f4a52', width:1, ext:true },
 };
@@ -248,16 +254,16 @@ let reqGen = 0;   // bumped on every tab switch; stale responses are discarded
 
 // ---------- chart ----------
 const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-  layout:{ background:{ color:'#0a0e12' }, textColor:'#5c6f80',
-           fontFamily:"'SF Mono',ui-monospace,Menlo,monospace", fontSize:11 },
-  grid:{ vertLines:{ color:'#10161d' }, horzLines:{ color:'#10161d' } },
+  layout:{ background:{ color:'#070a09' }, textColor:'#7c8f87',
+           fontFamily:"'JetBrains Mono',ui-monospace,Menlo,monospace", fontSize:11 },
+  grid:{ vertLines:{ color:'#0e1412' }, horzLines:{ color:'#0e1412' } },
   crosshair:{ mode:LightweightCharts.CrosshairMode.Normal },
-  rightPriceScale:{ borderColor:'#1e2a36' },
-  timeScale:{ borderColor:'#1e2a36', timeVisible:true, secondsVisible:false },
+  rightPriceScale:{ borderColor:'#1b2320' },
+  timeScale:{ borderColor:'#1b2320', timeVisible:true, secondsVisible:false },
 });
 const candleSeries = chart.addCandlestickSeries({
-  upColor:'#26a69a', downColor:'#ef5350', borderVisible:false,
-  wickUpColor:'#26a69a', wickDownColor:'#ef5350',
+  upColor:'#35ffb0', downColor:'#ff4d6a', borderVisible:false,
+  wickUpColor:'#35ffb0', wickDownColor:'#ff4d6a',
   priceFormat:{ type:'price', precision:symRec().prec, minMove:symRec().move },
 });
 new ResizeObserver(() => {
