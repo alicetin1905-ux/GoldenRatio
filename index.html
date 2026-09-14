@@ -157,13 +157,18 @@
 const API = 'https://api.bybit.com/v5/market/kline';
 // Tick sizes below are fallbacks — real values are pulled from Bybit at boot,
 // because a wrong minMove makes the price axis render badly.
+// th is each coin's own default impulse threshold (%) — BTC and the majors
+// move less per candle than smaller-cap alts, so a single shared threshold
+// either missed BTC moves or over-fired on DOGE/SOL. Applied both to that
+// coin's own view (pre-filling the threshold input on switch) and to its
+// row in every cross-symbol scan (strip signals, background alerts).
 const SYMBOLS = [
-  { key:'BTC',  sym:'BTCUSDT',  prec:1, move:0.1     },
-  { key:'ETH',  sym:'ETHUSDT',  prec:2, move:0.01    },
-  { key:'SOL',  sym:'SOLUSDT',  prec:3, move:0.001   },
-  { key:'XRP',  sym:'XRPUSDT',  prec:4, move:0.0001  },
-  { key:'BNB',  sym:'BNBUSDT',  prec:2, move:0.01    },
-  { key:'DOGE', sym:'DOGEUSDT', prec:5, move:0.00001 },
+  { key:'BTC',  sym:'BTCUSDT',  prec:1, move:0.1,     th:2 },
+  { key:'ETH',  sym:'ETHUSDT',  prec:2, move:0.01,    th:1 },
+  { key:'SOL',  sym:'SOLUSDT',  prec:3, move:0.001,   th:3 },
+  { key:'XRP',  sym:'XRPUSDT',  prec:4, move:0.0001,  th:3 },
+  { key:'BNB',  sym:'BNBUSDT',  prec:2, move:0.01,    th:2 },
+  { key:'DOGE', sym:'DOGEUSDT', prec:5, move:0.00001, th:2 },
 ];
 const TFS = [
   { key:'30m', iv:'30'  },
@@ -587,12 +592,12 @@ function buildSymStrip() {
 }
 // Scans every symbol on the ACTIVE timeframe — shows which coins printed a qualifying move
 async function scanSymStrip() {
-  const { th, win } = cfg();
+  const { win } = cfg();
   const tf = TFS.find(t => t.key === activeTF);
   for (const s of SYMBOLS) {
     try {
       const all = await fetchKlines(tf.iv, 200, s.sym);
-      const imp = detect(all.slice(0, -1), th, win, 180);
+      const imp = detect(all.slice(0, -1), s.th, win, 180);
       const el = document.querySelector('#sym_' + s.key + ' .symSig');
       if (!el) continue;
       if (imp) {
@@ -611,6 +616,7 @@ function switchSym(key) {
   const r = symRec();
   document.getElementById('symLabel').textContent = r.sym + '.P · Bybit linear';
   candleSeries.applyOptions({ priceFormat:{ type:'price', precision:r.prec, minMove:r.move } });
+  $('cfgTh').value = r.th;
   clearFibs();
   candles = []; lastClosedTime = 0; prevLive = null;
   candleSeries.setData([]);       // drop old symbol's prices before the new range lands
@@ -676,6 +682,7 @@ function gotoImpulse(symKey, tfKey) {
   const r = symRec();
   document.getElementById('symLabel').textContent = r.sym + '.P · Bybit linear';
   candleSeries.applyOptions({ priceFormat:{ type:'price', precision:r.prec, minMove:r.move } });
+  $('cfgTh').value = r.th;
   clearFibs();
   candles = []; lastClosedTime = 0; prevLive = null;
   candleSeries.setData([]);
@@ -730,13 +737,13 @@ async function scanAll() {
   try { await scanAllOnce(); } finally { watchBusy = false; }
 }
 async function scanAllOnce() {
-  const { th, win } = cfg();
+  const { win } = cfg();
   for (const s of SYMBOLS) {
     for (const tf of TFS) {
       try {
         const all = await fetchKlines(tf.iv, 300, s.sym);
         const closed = all.slice(0, -1);
-        const imp = detect(closed, th, win, 280);
+        const imp = detect(closed, s.th, win, 280);
         const key = watchKey(s.key, tf.key);
         const prevDir = watch.last[key] || null;
         const curDir = imp ? imp.dir : null;
@@ -793,6 +800,7 @@ loadTickSizes();
 buildLevelCells();
 buildSymStrip();
 buildStrip();
+$('cfgTh').value = symRec().th;
 poll(true);
 scanStrip();
 scanSymStrip();
