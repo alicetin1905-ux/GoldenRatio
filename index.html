@@ -157,12 +157,34 @@ const API = 'https://api.bybit.com/v5/market/kline';
 // coin's own view (pre-filling the threshold input on switch) and to its
 // row in every cross-symbol scan (strip signals, background alerts).
 const SYMBOLS = [
-  { key:'BTC',  sym:'BTCUSDT',  prec:1, move:0.1,     th:2 },
-  { key:'ETH',  sym:'ETHUSDT',  prec:2, move:0.01,    th:1 },
-  { key:'SOL',  sym:'SOLUSDT',  prec:3, move:0.001,   th:3 },
-  { key:'XRP',  sym:'XRPUSDT',  prec:4, move:0.0001,  th:3 },
-  { key:'BNB',  sym:'BNBUSDT',  prec:2, move:0.01,    th:2 },
-  { key:'DOGE', sym:'DOGEUSDT', prec:5, move:0.00001, th:2 },
+  // Same 25 coins TradeBot trades, in its order. th (impulse %) matches the
+  // bot's FIB_THRESHOLD, 2 where it uses its default; prec/move are fallbacks
+  // until loadTickSizes() reads Bybit's tick sizes.
+  { key:'BTC',      sym:'BTCUSDT',       prec:1, move:0.1,      th:2 },
+  { key:'ETH',      sym:'ETHUSDT',       prec:2, move:0.01,     th:1 },
+  { key:'SOL',      sym:'SOLUSDT',       prec:3, move:0.001,    th:3 },
+  { key:'XRP',      sym:'XRPUSDT',       prec:4, move:0.0001,   th:3 },
+  { key:'BNB',      sym:'BNBUSDT',       prec:2, move:0.01,     th:2 },
+  { key:'DOGE',     sym:'DOGEUSDT',      prec:5, move:0.00001,  th:2 },
+  { key:'HYPE',     sym:'HYPEUSDT',      prec:3, move:0.001,    th:3 },
+  { key:'SUI',      sym:'SUIUSDT',       prec:4, move:0.0001,   th:4 },
+  { key:'ENA',      sym:'ENAUSDT',       prec:5, move:0.00001,  th:2 },
+  { key:'WLD',      sym:'WLDUSDT',       prec:4, move:0.0001,   th:2 },
+  { key:'DYDX',     sym:'DYDXUSDT',      prec:5, move:0.00001,  th:2 },
+  { key:'LDO',      sym:'LDOUSDT',       prec:4, move:0.0001,   th:2 },
+  { key:'GALA',     sym:'GALAUSDT',      prec:6, move:0.000001, th:2 },
+  { key:'KAITO',    sym:'KAITOUSDT',     prec:4, move:0.0001,   th:2 },
+  { key:'FARTCOIN', sym:'FARTCOINUSDT',  prec:4, move:0.0001,   th:2 },
+  { key:'EGLD',     sym:'EGLDUSDT',      prec:3, move:0.001,    th:2 },
+  { key:'NEAR',     sym:'NEARUSDT',      prec:3, move:0.001,    th:2 },
+  { key:'XLM',      sym:'XLMUSDT',       prec:5, move:0.00001,  th:2 },
+  { key:'BLUR',     sym:'BLURUSDT',      prec:5, move:0.00001,  th:2 },
+  { key:'SAND',     sym:'SANDUSDT',      prec:5, move:0.00001,  th:2 },
+  { key:'AXS',      sym:'AXSUSDT',       prec:4, move:0.0001,   th:2 },
+  { key:'ZIL',      sym:'ZILUSDT',       prec:6, move:0.000001, th:2 },
+  { key:'TRX',      sym:'TRXUSDT',       prec:5, move:0.00001,  th:2 },
+  { key:'CHZ',      sym:'CHZUSDT',       prec:5, move:0.00001,  th:2 },
+  { key:'POPCAT',   sym:'POPCATUSDT',    prec:5, move:0.00001,  th:2 },
 ];
 const TFS = [
   { key:'30m', iv:'30'  },
@@ -588,18 +610,19 @@ function buildSymStrip() {
 async function scanSymStrip() {
   const { win } = cfg();
   const tf = TFS.find(t => t.key === activeTF);
-  for (const s of SYMBOLS) {
+  // all coins at once — one after another took seconds with 25 of them
+  await Promise.all(SYMBOLS.map(async s => {
     try {
       const all = await fetchKlines(tf.iv, 200, s.sym);
       const imp = detect(all.slice(0, -1), s.th, win, 180);
       const el = document.querySelector('#sym_' + s.key + ' .symSig');
-      if (!el) continue;
+      if (!el) return;
       if (imp) {
         el.textContent = (imp.dir === 'up' ? '▲' : '▼') + imp.movePct.toFixed(1);
         el.className = 'symSig ' + (imp.dir === 'up' ? 'up' : 'dn');
       } else { el.textContent = '·'; el.className = 'symSig'; }
     } catch (e) { /* transient errors stay silent */ }
-  }
+  }));
 }
 function switchSym(key) {
   if (key === activeSym) { resetView(); return; }
